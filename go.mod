@@ -1,3 +1,3 @@
-module maroon4/transport
+module github.com/maxLogvynyuk/go-transport
 
 go 1.16
