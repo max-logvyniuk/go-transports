@@ -56,7 +56,6 @@ func handleMessages(conn net.Conn, routes map[string]func(conn net.Conn, data st
 	bs, err := ioutil.ReadAll(conn)
 
 	// buf := make([]byte, 100000000)
-
 	// n, err := conn.Read(buf)
 
 	if err != nil {
