@@ -2,10 +2,10 @@
 
 ## 1.TCP
 
-Inside there is TCP router for hangling tcp connection from clients written in gifferent langueges(testet with node.js client)
+Inside there is TCP router for handling tcp connection from clients written in different languages(tested with node.js client)
 
 ### 1.1 handleSimpleConnection
-To use import module and use like:
+Import module and use for routing tcp connections like this:
 
 ```bash
 routes := map[string]func(conn net.Conn, data string){
@@ -16,15 +16,27 @@ transports.TCPRouter(ln, routes)
 ```
 
 routes - is  map[string]func(conn net.Conn, data string){} that describe controllers for "handleSimpleConnection" function
+
 ln - is instence of net.Listener
 
 ```bash
 ln, err := net.Listen("tcp", ":4444")
 ```
+
+### Example of incomming message that can process handleSimpleConnection:
+
+```bash
+ "{LENGTHOFBUFFER}#"{
+           pattern: string,
+           data: any,
+       }""
+```
+
+In you only specify buffer length and "#" separator {LENGTHOFBUFFER}
+
 ### 1.2 handleStreamConnection
 
-This method start exequting when you spesify additional params in begining of tcp stream.
-It helps to process files to golang server 
+This method start to execute when you spesify additional params in begining of tcp stream. It helps to process files to golang server 
 
 #### Example of string and buffer data that sends from client server to golang server:
 
