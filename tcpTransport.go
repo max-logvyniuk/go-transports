@@ -1,4 +1,4 @@
-package transport
+package transports
 
 import (
 	"encoding/json"
@@ -9,28 +9,39 @@ import (
 	"strings"
 )
 
-type resS struct {
+/** first step of encodding request (Data in string)*/
+type reqDataString struct {
 	Pattern string
 	Data    string
 }
 
-type FileOptions struct {
-	Fieldname    string
-	Originalname string
-	Encoding     string
-	Mimetype     string
-	Size         int
+/** second step of encodding request (Data in bite slice)*/
+type reqEncoded struct {
+	Pattern string
+	Data    []byte
 }
 
-func TCPRouter(ln net.Listener, routes map[string]func(conn net.Conn, data string)) {
+type RequestData interface {
+}
+
+/** RouterMap is a type for keys(patterns) and appropriate function handler
+    recive:
+	  conn - connection
+	  options - specific for some function handler
+	  data - in byte slice. Unmarshal in appropriate function handler
+*/
+type RouterMap map[string]func(conn net.Conn, options string, data []byte)
+
+/** store for custom routes*/
+var routes *RouterMap
+
+/** Recive net.Listener and map with routes and appropriate function handler*/
+func TCPRouter(ln net.Listener, routesDefault RouterMap) {
+
+	routes = &routesDefault
+
 	for {
 		conn, err := ln.Accept()
-
-		// timeoutDuration := 500 * time.Second
-
-		// conn.SetDeadline(time.Now().Add(timeoutDuration))
-
-		// conn.SetReadDeadline(time.Now().Add(timeoutDuration))
 
 		fmt.Println("TCPRouter conn - ", conn)
 
@@ -38,85 +49,75 @@ func TCPRouter(ln net.Listener, routes map[string]func(conn net.Conn, data strin
 			log.Println(err)
 			continue
 		}
-		go handleConnection(conn, routes)
+		go handleConnection(conn)
 	}
 }
 
-func handleConnection(conn net.Conn, routes map[string]func(conn net.Conn, data string)) {
-	defer conn.Close()
-
-	// fmt.Println("handleConnection ---", conn)
-
-	handleMessages(conn, routes)
-}
-
-func handleMessages(conn net.Conn, routes map[string]func(conn net.Conn, data string)) {
+/** Recive connection and map with routes and appropriate function handler*/
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	bs, err := ioutil.ReadAll(conn)
-
-	// buf := make([]byte, 100000000)
-	// n, err := conn.Read(buf)
 
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	//TODO: get message_length
-	// incData := string(buf[:n])
+	/** Convert bite slice to string to get meta data*/
 	incData := string(bs)
 
-	// fmt.Println("incData ---", incData)
+	fmt.Println("incData ---", incData)
 
+	/** # is separator for meta data and data*/
 	incDataSlice := strings.Split(incData, "#")
 
-	messageAndFileMetaSlice := strings.Split(incDataSlice[0], "@")
+	/** @ is separator for message_length, pattern and optiopns in meta data*/
+	messageLengthPatternOptionsMetaSlice := strings.Split(incDataSlice[0], "@")
 
-	messageMeta := messageAndFileMetaSlice[0]
-	// fmt.Println("messageMeta0 ---", messageMeta)
+	fmt.Println("messageLengthPatternOptionsMetaSlice0 ---", messageLengthPatternOptionsMetaSlice)
 
-	messageMetaSlice := strings.Split(messageMeta, "=")
+	/** get message_length message from meta data slice - that is length of data buffer*/
+	messageLength := messageLengthPatternOptionsMetaSlice[0]
 
+	/** get message_length from meta data slice - that is length of data buffer*/
+	messageLengthSlice := strings.Split(messageLength, "=")
+
+	/** get meta data length to separate meta data buffer from data buffer*/
 	metaLength := len([]byte(incDataSlice[0])) + 1
 
-	// var fileOptions *FileOptions
+	pattern := ""
+	options := ""
 
-	// fmt.Println("messageAndFileMetaSlice ---", messageAndFileMetaSlice, messageAndFileMetaSlice[1]);
-
-	// err = json.Unmarshal([]byte(messageAndFileMetaSlice[1]), &fileOptions)
-
-	// if err != nil {
-	// 	fmt.Println("FileOptions unmarshal error ---", err)
-	// }
-
-	fileOptions := ""
-
-	if len(messageAndFileMetaSlice) > 1 {
-		fileOptions = messageAndFileMetaSlice[1]
+	if len(messageLengthPatternOptionsMetaSlice) > 1 {
+		/** get pattern and options from meta data slice*/
+		pattern = strings.Split(messageLengthPatternOptionsMetaSlice[1], "=")[1]
+		options = messageLengthPatternOptionsMetaSlice[2]
 	}
 
-	fmt.Println("fileOptions ---", fileOptions)
+	fmt.Println("options ---", options)
 
-	// fmt.Println("messageMeta1 ---", messageMetaSlice[0], messageMetaSlice, metaLength, len(bs))
-
-	n := len(bs)
-
-	switch messageMetaSlice[0] {
+	/** determine what kind of handle use, stream or simple
+	  if  "message_length" present inside income data than need to use handleStreamConnection
+	*/
+	switch messageLengthSlice[0] {
 	case "message_length":
-		handleStreamConnection(conn, bs[metaLength:], n, fileOptions, routes)
+		handleStreamConnection(conn, pattern, options, bs[metaLength:])
 	default:
-		handleSimpleConnection(conn, bs[metaLength:], routes)
+		handleSimpleConnection(conn, bs[metaLength:])
 
 	}
 }
 
-func handleSimpleConnection(conn net.Conn, data []byte, routes map[string]func(conn net.Conn, data string)) {
+func handleSimpleConnection(conn net.Conn, data []byte) {
 
+	// TODO: fix data from string to []byte
 	jsonRequest := string(data)
 
-	var parsedRequest resS
+	fmt.Println("jsonRequest ---", jsonRequest)
 
-	err := json.Unmarshal([]byte(jsonRequest), &parsedRequest)
+	var parsedRequestDataString reqDataString
+
+	err := json.Unmarshal([]byte(jsonRequest), &parsedRequestDataString)
 
 	if err != nil {
 		fmt.Println("handleSimpleConnection: Request parsing error ---", err)
@@ -124,42 +125,41 @@ func handleSimpleConnection(conn net.Conn, data []byte, routes map[string]func(c
 		conn.Write([]byte("Request parsing error"))
 	}
 
-	// fmt.Println("handleConnection parsedRequest ---", parsedRequest)
+	fmt.Println("handleConnection parsedRequest ---", parsedRequestDataString)
 
-	router(conn, routes, parsedRequest)
+	var parsedRequest reqEncoded
+
+	parsedRequest.Pattern = parsedRequestDataString.Pattern
+	parsedRequest.Data = []byte(parsedRequestDataString.Data)
+
+	router(conn, parsedRequest)
 
 }
 
-func handleStreamConnection(conn net.Conn, data []byte, bl int, fileOptionsS string, routes map[string]func(conn net.Conn, data string)) {
+func handleStreamConnection(conn net.Conn, pattern string, optionsS string, data []byte) {
 	defer conn.Close()
 
-	var fileOptions *FileOptions
-
-	fmt.Println("messageAndFileMetaSlice ---", fileOptionsS)
-
-	err := json.Unmarshal([]byte(fileOptionsS), &fileOptions)
-
-	fmt.Println("handleStreamConnection len ---", len(data))
-
-	// FOR STREAMING: need to think how implement streams handling
-	err = ioutil.WriteFile("/tmp/"+fileOptions.Originalname, data, 0644)
-
-	if err != nil {
-		fmt.Println("Error ioutil.WriteFile ---", err)
-		conn.Write([]byte("Error ioutil.WriteFile ---"))
-	} else {
-		conn.Write([]byte("Data saved"))
-	}
+	streamRouter(conn, pattern, optionsS, data)
 
 }
 
-func router(conn net.Conn, r map[string]func(conn net.Conn, data string), parsedRequest resS) {
+/** router for simple connection */
+func router(conn net.Conn, parsedRequest reqEncoded) {
 	useDefaultPattern := true
 
+	r := *routes
+
+	options := ""
+
+	fmt.Println("parsedRequest router ---", parsedRequest)
+
+	/** Determine what function handler to use for processing current connection
+	  search appropriate key from RouterMap that suitable for pattern
+	*/
 	for k, v := range r {
 
 		if k == parsedRequest.Pattern {
-			v(conn, parsedRequest.Data)
+			v(conn, options, parsedRequest.Data)
 
 			useDefaultPattern = false
 			break
@@ -171,85 +171,28 @@ func router(conn net.Conn, r map[string]func(conn net.Conn, data string), parsed
 	}
 }
 
-// func handleConnection(conn net.Conn, routes map[string]func(conn net.Conn, data string)) {
-// 	defer conn.Close()
+/** router for stream connection */
+func streamRouter(conn net.Conn, pattern string, optionsS string, data []byte) {
+	useDefaultPattern := true
 
-// 	// scanner := bufio.NewScanner(conn)
+	r := *routes
 
-// 	// fmt.Println("scanner ----", scanner, scanner.Text())
+	fmt.Println("Pattern ---", pattern, optionsS)
 
-// 	// for scanner.Scan() {
-// 	// 	message := scanner.Text()
-// 	// 	fs := strings.Fields(message)
-// 	// 	bsL := strings.Split(fs[0], "=")
-// 	// 	fmt.Println("message ---", fs[0], bsL[1])
+	/** Determine what function handler to use for processing current connection
+	  search appropriate key from RouterMap that suitable for pattern
+	*/
+	for k, v := range r {
 
-// 	// 	if len(fs) < 2 {
-// 	// 		continue
-// 	// 	}
-// 	// }
+		if k == pattern {
+			v(conn, optionsS, data)
 
-// 	buf := make([]byte, 10000000)
+			useDefaultPattern = false
+			break
+		}
+	}
 
-// 	n, err := conn.Read(buf)
-
-// 	if err != nil {
-// 		fmt.Println("conn.Read error", err)
-// 	}
-
-// 	println("handleConnection data from client 0 -", n)
-
-// 	bs, err := ioutil.ReadAll(conn)
-
-// 	if err != nil {
-// 		fmt.Println("Error ioutil.ReadAll ---", err)
-// 	}
-
-// 	fmt.Println("ioutil.ReadAll ---", bs, string(bs))
-
-// 	// FOR STREAMING: need to think how implement streams handling
-// 	err = ioutil.WriteFile("/tmp/dat2", bs, 0644)
-
-// 	if err != nil {
-// 		fmt.Println("Error ioutil.WriteFile ---", err)
-// 	}
-
-// 	jsonRequest := string(buf[:n])
-// 	println("HandleConnection data from client 1 -", jsonRequest, buf)
-
-// 	// i := strings.Index(jsonRequest, "#")
-
-// 	var parsedRequest resS
-
-// 	// println("Data from client 2---", i, jsonRequest[i+1:], string(buf[:n]))
-
-// 	// If use nest.js ClientPoxy
-// 	// err = json.Unmarshal([]byte(jsonRequest[i+1:]), &parsedRequest)
-// 	err = json.Unmarshal([]byte(jsonRequest), &parsedRequest)
-
-// 	if err != nil {
-// 		fmt.Println("Request parsing error ---", err)
-// 	}
-
-// 	fmt.Println("handleConnection parsedRequest ---", parsedRequest)
-
-// 	router(conn, routes, parsedRequest)
-// }
-
-// func router(conn net.Conn, r map[string]func(conn net.Conn, data string), parsedRequest resS) {
-// 	useDefaultPattern := true
-
-// 	for k, v := range r {
-
-// 		if k == parsedRequest.Pattern {
-// 			v(conn, parsedRequest.Data)
-
-// 			useDefaultPattern = false
-// 			break
-// 		}
-// 	}
-
-// 	if useDefaultPattern {
-// 		conn.Write([]byte("Unknowen pattern"))
-// 	}
-// }
+	if useDefaultPattern {
+		conn.Write([]byte("Unknowen pattern"))
+	}
+}
