@@ -8,15 +8,18 @@ Inside there is TCP router for handling tcp connection from clients written in d
 Import module and use for routing tcp connections like this:
 
 ```bash
-routes := map[string]func(conn net.Conn, data string){
+routes := transport.RouterMap{
 		"calculate":         controllers.CalculationGo,
 }
 
-transports.TCPRouter(ln, routes)
+transport.TCPRouter(ln, routes)
 ```
 
-routes - is  map[string]func(conn net.Conn, data string){} that describe controllers for "handleSimpleConnection" function
+routes - of type:
 
+````bash
+type RouterMap map[string]func(conn net.Conn, options string, data []byte)
+````
 ln - is instence of net.Listener
 
 ```bash
@@ -26,13 +29,19 @@ ln, err := net.Listen("tcp", ":4444")
 ### Example of incomming message that can process handleSimpleConnection:
 
 ```bash
- "{LENGTHOFBUFFER}#"{
-           pattern: string,
-           data: any,
-       }""
+
+messageData: 
+{
+  pattern: string,
+  data: any,
+}
+
+in stringify and converted to []byte;  
+
+ "{LENGTH_OF_BUFFER}#messageData"
 ```
 
-In you only specify buffer length and "#" separator {LENGTHOFBUFFER}
+In you only specify buffer length and "#" separator {LENGTH_OF_BUFFER}
 
 ### 1.2 handleStreamConnection
 
@@ -40,21 +49,19 @@ This method start to execute when you spesify additional params in begining of t
 
 #### Example of string and buffer data that sends from client server to golang server:
 
-`message_length={LENGTHOFBUFFER}@{FILEOPTIONS}#` - {METADATA} in string retpresentation (you need to convert it to buffer)
+`message_length={LENGTH_OF_BUFFER}@pattern={PATTERN}@{OPTIONS}#` - {METADATA} in string representation (you need to convert it to buffer)
 
 `{METADATA}{BUFFER}` - you need to concat two buffers into one
 
-{LENGTHOFBUFFER} - its length of buffer
+{LENGTH_OF_BUFFER} - its length of buffer
 
-{FILEOPTIONS} - file options = {
-           fieldname string,
-           originalname string,
-           encoding string,
-           mimetype string,
-           size int,
-        }
+{PATTERN} - name of appropriate handler func
 
- @ - separator between {LENGTHOFBUFFER} and {FILEOPTIONS}
+{OPTIONS} - options = {
+           [string]: any
+          }
+
+ @ - separator between {LENGTH_OF_BUFFER}, {PATTERN} and {OPTIONS}
 
  `#` - separator between message meta and {BUFFER}       
 
