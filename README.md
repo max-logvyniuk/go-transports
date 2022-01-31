@@ -7,17 +7,26 @@ Inside there is TCP router for handling tcp connection from clients written in d
 ### 1.1 handleSimpleConnection
 Import module and use for routing tcp connections like this:
 
+
 ```bash
-routes := map[string]func(conn net.Conn, data string){
+
+/** in package */
+type TContext struct {
+	Conn    net.Conn
+	Options string
+	Data    []byte
+}
+
+routes := map[string]func(tc transports.TContext){
 		"calculate":         controllers.CalculationGo,
 }
 
 transports.TCPRouter(ln, routes)
 ```
 
-routes - is  map[string]func(conn net.Conn, data string){} that describe controllers for "handleSimpleConnection" function
+routes - is  map[string]func(tc transports.TContext){} that describe controllers for "handleSimpleConnection" function
 
-ln - is instence of net.Listener
+ln - is instance of net.Listener
 
 ```bash
 ln, err := net.Listen("tcp", ":4444")
@@ -36,11 +45,11 @@ In you only specify buffer length and "#" separator {LENGTHOFBUFFER}
 
 ### 1.2 handleStreamConnection
 
-This method start to execute when you spesify additional params in begining of tcp stream. It helps to process files to golang server 
+This method start to execute when you specify additional params in beginning of tcp stream. It helps to process files to golang server
 
 #### Example of string and buffer data that sends from client server to golang server:
 
-`message_length={LENGTHOFBUFFER}@{FILEOPTIONS}#` - {METADATA} in string retpresentation (you need to convert it to buffer)
+`message_length={LENGTHOFBUFFER}@{FILEOPTIONS}#` - {METADATA} in string representation (you need to convert it to buffer)
 
 `{METADATA}{BUFFER}` - you need to concat two buffers into one
 
@@ -56,5 +65,5 @@ This method start to execute when you spesify additional params in begining of t
 
  @ - separator between {LENGTHOFBUFFER} and {FILEOPTIONS}
 
- `#` - separator between message meta and {BUFFER}       
+ `#` - separator between message meta and {BUFFER}
 
